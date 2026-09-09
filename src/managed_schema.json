@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "properties": {
+    "baseUrl": {
+      "title": "Base URL",
+      "description": "The deployment's canonical origin, for example https://links.example.com.",
+      "type": "string"
+    },
+    "shortHost": {
+      "title": "Short host",
+      "description": "The bare host members type in the address bar. Defaults to go.",
+      "type": "string"
+    }
+  }
+}

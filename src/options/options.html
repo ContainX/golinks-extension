@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>GoLinks settings</title>
+    <link rel="stylesheet" href="ui.css" />
+  </head>
+  <body class="options">
+    <div class="options-page">
+      <div class="masthead">
+        <span class="mark" id="mark"></span>
+        <h1>GoLinks</h1>
+      </div>
+
+      <section class="panel" id="deployment-panel">
+        <div>
+          <h2>Deployment</h2>
+          <p class="muted" id="deployment-help">
+            The address of your organization's GoLinks. Ask an administrator if you are not sure.
+          </p>
+        </div>
+        <form id="deployment-form" class="stack">
+          <div class="field">
+            <label class="micro-label" for="base-url">Base URL</label>
+            <input
+              type="text"
+              id="base-url"
+              placeholder="https://links.example.com"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <p class="message error" id="base-url-message" hidden></p>
+          </div>
+          <div class="row" id="deployment-actions">
+            <button type="submit" class="primary" id="save">Save and connect</button>
+          </div>
+        </form>
+        <p class="notice" id="permission-note">
+          Saving asks for permission to redirect the short host and to read your session on the
+          deployment. Both are needed for <code>go/</code> to work.
+        </p>
+      </section>
+
+      <section class="panel" id="status-panel">
+        <h2>Status</h2>
+        <div id="status"></div>
+      </section>
+    </div>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>
