@@ -92,6 +92,157 @@ options page and no prompt. A generic build (plain `pnpm build`) is what the
 public listing carries; it takes the address from policy or the options page and
 asks for host access once.
 
+## Publish to the Chrome Web Store
+
+Publishing gets the extension somewhere a force-install policy can point at.
+
+You need a Chrome Web Store developer account: a Google account enrolled in the
+developer program for a one-time registration fee, US$5 at the time of writing.
+Check the Web Store developer dashboard for the current amount and for what the
+account itself has to be. Enroll an account the organization owns rather than
+one person's, because the listing outlives whoever created it.
+
+Create the item in the dashboard and upload a zip. `golinks-extension.zip` from
+a tagged release is the generic build; a deployment build is one you produce
+yourself with the command above.
+
+**The item keeps the pinned id.** The manifest carries the public half of the
+key pair and the id is derived from it, which is why the unpacked build, the
+zip, and the store item all load as `fabhnbapplciocjepcpgppjnhedbbiae`.
+Everything downstream depends on that id: the policies you write, the
+deployment's `EXTENSION_ORIGINS`, the browser tests.
+
+So the key has to stay in the packaged manifest. `scripts/build.mjs` copies
+`src/manifest.json` into the package unchanged, so it is already in the zip;
+what to avoid is stripping it, or letting some other packaging step rewrite the
+manifest without it.
+
+Read the id off the item's page in the dashboard once the item exists, before
+you write any policy, and confirm it matches. The dashboard is the authority on
+what the store assigned. If it does not match, stop there rather than writing
+policy against an id that is about to change.
+
+**Visibility.** The store offers three, and a force-install policy works with
+any of them, because policy addresses the item by id.
+
+- *Private* limits the item to accounts you name and, when your developer
+  account belongs to the organization's Google Workspace, to that domain. This
+  is the one to choose for an internal rollout. The dashboard states the
+  current rules for publishing to a domain.
+- *Unlisted* means anyone with the link or the id can install it, but it does
+  not appear in search or browse.
+- *Public* is listed and searchable.
+
+**Which build goes on which listing.** A private listing serves one
+organization, so put the deployment build on it: the address is baked in, host
+access to the service is a required permission, and members get a working `go/`
+with nothing to do. A public or unlisted listing is read by people from many
+deployments, so it carries the generic build, which asks for the address once.
+A deployment build on a public listing would name one organization's service in
+its permissions and be useless to everyone else.
+
+**Versions and review.** Every upload needs a version the store has not seen
+before. Bump `package.json`; the build copies that version into the packaged
+manifest. See [Releases](#releases).
+
+Every upload is reviewed before it reaches anyone, private and unlisted items
+included. How long that takes varies, and an item asking for broad host access
+is not the fast case, so put review inside the rollout plan rather than after
+it. The dashboard shows where a submission has got to.
+
+**Self-hosting instead.** A deployment that cannot use the store at all can
+host the package itself. Pack a `.crx` signed with the private half of the
+pinned key pair, publish it and an update manifest over HTTPS somewhere the
+managed browsers can reach, and point the policy at that update manifest rather
+than at the store.
+
+In the platform policy that is one change: `update_url` becomes your update
+manifest's address instead of
+`https://clients2.google.com/service/update2/crx`. In Workspace it means adding
+the extension from a custom URL instead of from the store. The id, the
+installation mode, and the policy values are the same either way.
+
+Two things to know before choosing this. The private key is not in the
+repository, so only whoever holds the original can sign a `.crx` that keeps the
+pinned id. And Chrome installs extensions from outside the store only where
+policy says to, which is exactly the managed case here and nowhere else. There
+is no review, and you publish an update by replacing the `.crx` and raising the
+version in the update manifest.
+
+## Roll out with Google Workspace
+
+The path from a published item to every managed browser having it.
+
+Open the admin console and go to **Devices → Chrome → Apps & extensions →
+Users & browsers**.
+
+Select the organizational unit on the left before changing anything. What you
+set applies to that unit and everything under it, so start with a small one,
+confirm it on a real machine, then move up. Groups work the same way if your
+rollout follows groups rather than the directory.
+
+Add the extension with the **+** button at the bottom right, then **Add Chrome
+app or extension by ID**, and paste the id:
+
+```
+fabhnbapplciocjepcpgppjnhedbbiae
+```
+
+Leave the source as the Chrome Web Store. For a self-hosted build, change the
+source to a custom URL and give the address of your update manifest.
+
+Set **Installation policy** to **Force install**, or **Force install + pin to
+browser toolbar** to put the action button in the toolbar rather than leaving
+members to find it in the extensions menu. Force install also means the
+extension cannot be removed.
+
+If you rolled out the generic build, paste the deployment's address into
+**Policy for extensions** in the panel on the right. That JSON is in
+[Force-install with policy](#force-install-with-policy); take it from there
+rather than retyping it.
+
+If you rolled out a deployment build, leave that field empty. The address is in
+the package already. Setting it anyway is harmless and wins over the build,
+which is how you would move an organization to a new address without
+rebuilding.
+
+**What members see.** A deployment build works on first launch. `go/handbook`
+resolves in the address bar, the `go` keyword is in the omnibox, and there is
+no options page and no prompt.
+
+The generic build opens the options page once. The address is already filled in
+and locked, and Chrome asks a single question: whether to allow the extension
+access to the service's host, and to a non-default short host if you have one.
+Chrome asks a person for host access and policy cannot answer for it. Until
+someone does, the popup shows a link to that page, and `go/keyword` for the
+default short host already works, because `http://go/*` is a required
+permission granted at install.
+
+Either build, the popup needs a session. A member who has none sees a Sign in
+button that opens the ordinary sign-in page in a tab, once.
+
+**Verify on a managed machine.** Take a machine in the unit you changed.
+
+`chrome://policy` lists what the browser actually received. Look for
+`ExtensionSettings` or `ExtensionInstallForcelist` with the id in it and, once
+the extension is installed, for its own policies in their own section, with
+`baseUrl` and `shortHost` and the values you set. **Reload policies** fetches
+again if the machine has not caught up.
+
+`chrome://extensions` shows the extension under the pinned id with its version,
+installed by enterprise policy, and no Remove button.
+
+Then type a keyword you know into the address bar as `go/<keyword>`. That is
+the part members notice first.
+
+**Updates.** Publish a new version to the store; once it is through review,
+managed browsers pick it up on their own schedule, in hours rather than at
+once. Nothing changes in the admin console, because the policy names the id and
+the id does not move. A member who wants it now can use **Update** on
+`chrome://extensions` with developer mode on. Self-hosted, you replace the
+`.crx` and raise the version in the update manifest; browsers poll it the same
+way.
+
 ## Force-install with policy
 
 Chrome Browser Cloud Management, Google Workspace, and platform policy files
@@ -173,6 +324,38 @@ the extension makes.
 permissions to required ones, because Chrome's host-access prompt is browser
 chrome that no test driver can click. `pnpm build` always rebuilds `dist/` from
 scratch, so the shipped build is never the test one.
+
+## Releases
+
+A release is a tag. Bump `version` in `package.json` and the matching `version`
+in `src/manifest.json`, so the source does not read as stale, commit that, then
+tag and push:
+
+```
+git tag v1.1.0
+git push origin v1.1.0
+```
+
+`package.json` is the one that decides what ships: the build copies its version
+into the packaged manifest.
+
+CI runs typecheck, lint, and the unit tests on every push, builds, and keeps
+the zip as a build artifact. On a tag it also attaches `golinks-extension.zip`
+to the GitHub release for that tag.
+
+That zip is the generic build: no address baked in, host access optional. It is
+what a public or unlisted listing carries, and what someone loading the
+extension by hand wants.
+
+A deployment build is never a release artifact, because it belongs to one
+organization. Build it yourself when you need one:
+
+```bash
+BASE_URL=https://links.example.com pnpm build --zip
+```
+
+The store refuses a version it has already accepted, so bump before every
+upload, whichever build you are uploading.
 
 ## Layout
 
