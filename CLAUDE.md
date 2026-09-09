@@ -80,6 +80,14 @@ and `via` and ignores the rest. That is what lets a single static substitution
 always join the parameter with the right separator. Tests apply the built rule
 the way Chrome would, so they read as behavior rather than as string equality.
 
+## Deployment builds
+
+`BASE_URL=... pnpm build` writes `dist/deployment.json` and adds the service's
+origin and the short host to `host_permissions`. `config.ts` reads that file
+below policy and above the options page, so a deployment build locks the
+address the same way policy does (`lockedBy: 'build'`). The generic build has
+no such file and keeps host access optional.
+
 ## Browser tests
 
 They need a running deployment with test sign-in on and this extension's id in

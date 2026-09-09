@@ -43,4 +43,25 @@ describe('resolveConfig', () => {
     const config = resolveConfig({}, { organizationTitle: 'Widgets' })
     expect(config.organizationTitle).toBe('Widgets')
   })
+
+  it('takes deployment-build values above the options page and below policy', () => {
+    const baked = { baseUrl: 'https://links.example.com', shortHost: 'go' }
+    const local = { baseUrl: 'http://localhost:3000', shortHost: 'links' }
+
+    const fromBuild = resolveConfig({}, local, baked)
+    expect(fromBuild.baseUrl).toBe('https://links.example.com')
+    expect(fromBuild.shortHost).toBe('go')
+    expect(fromBuild.managed).toEqual({ baseUrl: true, shortHost: true })
+    expect(fromBuild.lockedBy).toBe('build')
+
+    const fromPolicy = resolveConfig({ baseUrl: 'https://go.acme.test' }, local, baked)
+    expect(fromPolicy.baseUrl).toBe('https://go.acme.test')
+    expect(fromPolicy.lockedBy).toBe('policy')
+  })
+
+  it('reports nothing locked for a generic build without policy', () => {
+    const config = resolveConfig({}, { baseUrl: 'http://localhost:3000' })
+    expect(config.lockedBy).toBeNull()
+    expect(config.managed).toEqual({ baseUrl: false, shortHost: false })
+  })
 })

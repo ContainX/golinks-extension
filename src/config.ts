@@ -1,20 +1,25 @@
 // Where the deployment's address comes from.
 //
-// Enterprise policy wins: a managed install gets `baseUrl` (and `shortHost`
-// when it is not the default) from `storage.managed` and never shows setup.
-// Everything else falls back to what the options page saved in
-// `storage.local`. The organization title is cached locally so the options
-// page can name the deployment without a request.
+// Three sources, in order: enterprise policy (`storage.managed`), then the
+// values a deployment build baked into `deployment.json`, then what the
+// options page saved in `storage.local`. Policy and a deployment build both
+// lock the field, so a managed or purpose-built install never shows setup.
+// The organization title is cached locally so the options page can name the
+// deployment without a request.
 
 export const DEFAULT_SHORT_HOST = 'go'
 
+export type LockedBy = 'policy' | 'build' | null
+
 export interface Config {
-  /** null until a managed policy or the options page supplies one. */
+  /** null until policy, a deployment build, or the options page supplies one. */
   readonly baseUrl: string | null
   readonly shortHost: string
   readonly organizationTitle: string | null
-  /** Which values policy supplied, so the options page can lock them. */
+  /** Which values were supplied above the options page, so it can lock them. */
   readonly managed: { readonly baseUrl: boolean; readonly shortHost: boolean }
+  /** What locked `baseUrl`, for the options page's explanation. */
+  readonly lockedBy: LockedBy
 }
 
 export interface StoredValues {
@@ -29,17 +34,53 @@ function cleanString(value: unknown): string | null {
   return trimmed === '' ? null : trimmed
 }
 
-/** Merge policy over local storage. Pure, so the precedence rule is testable. */
-export function resolveConfig(managed: StoredValues, local: StoredValues): Config {
+/**
+ * Merge policy over the deployment build's defaults over local storage. Pure,
+ * so the precedence rule is testable.
+ */
+export function resolveConfig(
+  managed: StoredValues,
+  local: StoredValues,
+  baked: StoredValues = {},
+): Config {
   const managedBaseUrl = cleanString(managed.baseUrl)
   const managedShortHost = cleanString(managed.shortHost)
+  const bakedBaseUrl = cleanString(baked.baseUrl)
+  const bakedShortHost = cleanString(baked.shortHost)
+
+  const lockedBy: LockedBy =
+    managedBaseUrl !== null ? 'policy' : bakedBaseUrl !== null ? 'build' : null
 
   return {
-    baseUrl: managedBaseUrl ?? cleanString(local.baseUrl),
-    shortHost: managedShortHost ?? cleanString(local.shortHost) ?? DEFAULT_SHORT_HOST,
+    baseUrl: managedBaseUrl ?? bakedBaseUrl ?? cleanString(local.baseUrl),
+    shortHost:
+      managedShortHost ?? bakedShortHost ?? cleanString(local.shortHost) ?? DEFAULT_SHORT_HOST,
     organizationTitle: cleanString(local.organizationTitle),
-    managed: { baseUrl: managedBaseUrl !== null, shortHost: managedShortHost !== null },
+    managed: {
+      baseUrl: lockedBy !== null,
+      shortHost: managedShortHost !== null || bakedShortHost !== null,
+    },
+    lockedBy,
   }
+}
+
+/** The file a deployment build writes next to the manifest; absent in a generic build. */
+export const DEPLOYMENT_FILE = 'deployment.json'
+
+let bakedDefaults: Promise<StoredValues> | undefined
+
+async function readBakedDefaults(): Promise<StoredValues> {
+  bakedDefaults ??= (async () => {
+    try {
+      const response = await fetch(chrome.runtime.getURL(DEPLOYMENT_FILE))
+      if (!response.ok) return {}
+      const parsed: unknown = await response.json()
+      return typeof parsed === 'object' && parsed !== null ? (parsed as StoredValues) : {}
+    } catch {
+      return {}
+    }
+  })()
+  return bakedDefaults
 }
 
 const KEYS = ['baseUrl', 'shortHost', 'organizationTitle'] as const
@@ -54,11 +95,12 @@ async function readArea(area: chrome.storage.StorageArea): Promise<StoredValues>
 }
 
 export async function readConfig(): Promise<Config> {
-  const [managed, local] = await Promise.all([
+  const [managed, local, baked] = await Promise.all([
     readArea(chrome.storage.managed),
     readArea(chrome.storage.local),
+    readBakedDefaults(),
   ])
-  return resolveConfig(managed, local)
+  return resolveConfig(managed, local, baked)
 }
 
 export async function writeLocalConfig(values: {

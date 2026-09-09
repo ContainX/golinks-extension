@@ -5,6 +5,10 @@
 //   node scripts/build.mjs --watch        rebuild on change
 //   node scripts/build.mjs --zip          unpacked build plus golinks-extension.zip
 //   node scripts/build.mjs --grant-hosts  test build with host access pre-granted
+//   BASE_URL=https://links.example.com node scripts/build.mjs --zip
+//                                         deployment build: the service's address is
+//                                         baked in and its host access is a required
+//                                         permission, so a force-install needs no setup
 //
 // `--grant-hosts` promotes the optional host permissions to required ones. A
 // released build asks for them from the options page, and that prompt is
@@ -25,6 +29,24 @@ const dist = join(root, 'dist')
 const watch = process.argv.includes('--watch')
 const zip = process.argv.includes('--zip')
 const grantHosts = process.argv.includes('--grant-hosts')
+const deploymentBaseUrl = readDeploymentBaseUrl()
+const deploymentShortHost = (process.env.SHORT_HOST ?? 'go').trim() || 'go'
+
+function readDeploymentBaseUrl() {
+  const index = process.argv.indexOf('--base-url')
+  const raw = index === -1 ? process.env.BASE_URL : process.argv[index + 1]
+  if (raw === undefined || raw.trim() === '') return null
+  let url
+  try {
+    url = new URL(raw.trim())
+  } catch {
+    throw new Error(`BASE_URL is not a URL: ${raw}`)
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+    throw new Error(`BASE_URL must be http(s): ${raw}`)
+  }
+  return url.origin
+}
 
 const ENTRY_POINTS = {
   background: join(src, 'background.ts'),
@@ -62,6 +84,22 @@ async function finishManifest() {
   if (grantHosts && manifest.optional_host_permissions !== undefined) {
     manifest.host_permissions = manifest.optional_host_permissions
     delete manifest.optional_host_permissions
+    changed = true
+  }
+
+  // A deployment build knows its service, so host access for it (and for the short
+  // host) is declared up front; Chrome grants required permissions at install, and a
+  // force-install therefore needs no click. The address itself rides along in
+  // deployment.json, which config.ts reads below policy and above the options page.
+  if (deploymentBaseUrl !== null) {
+    const required = new Set(manifest.host_permissions ?? [])
+    required.add(`http://${deploymentShortHost}/*`)
+    required.add(`${deploymentBaseUrl}/*`)
+    manifest.host_permissions = [...required]
+    await writeFile(
+      join(dist, 'deployment.json'),
+      `${JSON.stringify({ baseUrl: deploymentBaseUrl, shortHost: deploymentShortHost }, null, 2)}\n`,
+    )
     changed = true
   }
 
@@ -120,4 +158,7 @@ if (watch) {
   }
   const { stdout } = await run(process.execPath, [join(root, 'scripts', 'extension-id.mjs')])
   console.log(`extension id ${stdout.trim()}`)
+  if (deploymentBaseUrl !== null) {
+    console.log(`deployment build for ${deploymentBaseUrl} (short host ${deploymentShortHost})`)
+  }
 }

@@ -108,15 +108,39 @@ async function refreshStatus(config: Config): Promise<void> {
   ])
 }
 
-function lockField(config: Config): void {
+/** Whether Chrome has already granted access to the deployment and the short host. */
+async function hasHostAccess(config: Config): Promise<boolean> {
+  if (config.baseUrl === null) return false
+  const origin = originPattern(config.baseUrl)
+  if (origin === null) return false
+  return chrome.permissions.contains({ origins: [shortHostPattern(config.shortHost), origin] })
+}
+
+function lockField(config: Config, granted: boolean): void {
   input.value = config.baseUrl ?? ''
   input.readOnly = true
-  save.hidden = true
-  permissionNote.hidden = true
+  const source = config.lockedBy === 'build' ? 'Built for this deployment' : 'Set by policy'
+
+  if (granted) {
+    save.hidden = true
+    permissionNote.hidden = true
+    deploymentHelp.replaceChildren(
+      el('span', { class: 'locked' }, [source]),
+      el('span', { class: 'muted' }, [
+        ' Your organization configures this extension. Nothing to do here.',
+      ]),
+    )
+    return
+  }
+
+  // Policy can set the address but not grant host access; that is the one click left.
+  save.hidden = false
+  save.textContent = 'Allow access'
+  permissionNote.hidden = false
   deploymentHelp.replaceChildren(
-    el('span', { class: 'locked' }, ['Set by policy']),
+    el('span', { class: 'locked' }, [source]),
     el('span', { class: 'muted' }, [
-      ' Your organization configures this extension. Nothing to do here.',
+      ' Allow this extension to use your session there, once, and it is ready.',
     ]),
   )
 }
@@ -148,7 +172,7 @@ async function main(): Promise<void> {
   const config = await readConfig()
 
   if (config.managed.baseUrl) {
-    lockField(config)
+    lockField(config, await hasHostAccess(config))
   } else {
     input.value = config.baseUrl ?? ''
   }
@@ -170,9 +194,13 @@ async function main(): Promise<void> {
     save.disabled = true
     save.textContent = 'Connecting…'
 
+    const label = save.textContent
     void connect(baseUrl, config.shortHost).finally(() => {
       save.disabled = false
-      save.textContent = 'Save and connect'
+      save.textContent = label
+      if (config.managed.baseUrl) {
+        void hasHostAccess(config).then((granted) => lockField(config, granted))
+      }
     })
   })
 }

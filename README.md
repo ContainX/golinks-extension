@@ -76,6 +76,22 @@ by `pnpm generate-key`, is not committed, and is needed only to sign a `.crx`
 for self-hosted updates. Regenerating the pair changes the id, and every
 deployment's `EXTENSION_ORIGINS` with it, so do not.
 
+## Build for a deployment
+
+Organizations rolling the extension out to everyone build it for their own
+service, so nobody types anything:
+
+```bash
+BASE_URL=https://links.example.com pnpm build --zip     # SHORT_HOST=go is the default
+```
+
+That build bakes the address into the package and declares host access to
+the service and the short host as required permissions, which Chrome grants at
+install. Force-installed this way, the extension works on first launch with no
+options page and no prompt. A generic build (plain `pnpm build`) is what the
+public listing carries; it takes the address from policy or the options page and
+asks for host access once.
+
 ## Force-install with policy
 
 Chrome Browser Cloud Management, Google Workspace, and platform policy files
