@@ -1,0 +1,135 @@
+# Cuts a release from a version tag and, when the repository is set up for it, publishes to
+# the Chrome Web Store. See docs/publishing-pipeline.md for the secrets and variables.
+#
+# Always: the generic build is attached to the GitHub release.
+# With the BASE_URL repository variable: a deployment build, with the service address baked in,
+#   is attached too.
+# With the CWS_* secrets: one of the two zips is uploaded to the store item and published.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build the release zips
+    runs-on: ubuntu-latest
+    outputs:
+      has_store: ${{ steps.flags.outputs.has_store }}
+      has_deployment: ${{ steps.flags.outputs.has_deployment }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # The tag names the version the store will see, and the build copies package.json's
+      # version into the manifest, so the two have to agree before anything is built.
+      - name: Check the tag against package.json
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match package.json version ${version}." >&2
+            exit 1
+          fi
+
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+
+      - name: Build the generic zip
+        run: |
+          pnpm build
+          mv golinks-extension.zip golinks-extension-generic.zip
+
+      # Secrets cannot be read in a job-level `if`, so a step decides here and later jobs
+      # read the answer.
+      - name: Decide what else to do
+        id: flags
+        env:
+          HAS_STORE: ${{ secrets.CWS_REFRESH_TOKEN != '' && secrets.CWS_EXTENSION_ID != '' }}
+          HAS_DEPLOYMENT: ${{ vars.BASE_URL != '' }}
+        run: |
+          echo "has_store=${HAS_STORE}" >> "$GITHUB_OUTPUT"
+          echo "has_deployment=${HAS_DEPLOYMENT}" >> "$GITHUB_OUTPUT"
+
+      - name: Build the deployment zip
+        if: steps.flags.outputs.has_deployment == 'true'
+        env:
+          BASE_URL: ${{ vars.BASE_URL }}
+          SHORT_HOST: ${{ vars.SHORT_HOST || 'go' }}
+        run: |
+          pnpm build
+          mv golinks-extension.zip golinks-extension-deployment.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-zips
+          path: golinks-extension-*.zip
+
+      - name: Attach the zips to the GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: golinks-extension-*.zip
+
+  publish:
+    name: Publish to the Chrome Web Store
+    needs: build
+    if: needs.build.outputs.has_store == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-zips
+
+      # A private listing carries the deployment build, because the address is baked in and
+      # host access is granted at install. A public or unlisted listing carries the generic
+      # build. CWS_UPLOAD picks; without it, the deployment build wins when there is one.
+      - name: Choose the zip
+        id: zip
+        env:
+          UPLOAD: ${{ vars.CWS_UPLOAD }}
+          HAS_DEPLOYMENT: ${{ needs.build.outputs.has_deployment }}
+        run: |
+          case "${UPLOAD:-}" in
+            generic) file=golinks-extension-generic.zip ;;
+            deployment) file=golinks-extension-deployment.zip ;;
+            *) if [ "${HAS_DEPLOYMENT}" = "true" ]; then file=golinks-extension-deployment.zip; else file=golinks-extension-generic.zip; fi ;;
+          esac
+          test -f "$file" || { echo "No ${file} to upload." >&2; exit 1; }
+          echo "file=${file}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Uploads the zip to the existing store item and submits it for review. Publishing goes
+      # to everyone the listing's visibility allows; set CWS_PUBLISH_TARGET=trustedTesters to
+      # publish to the trusted testers list instead.
+      - name: Upload and publish
+        env:
+          EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+          CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+          PUBLISH_TARGET: ${{ vars.CWS_PUBLISH_TARGET || 'default' }}
+        run: |
+          npx --yes chrome-webstore-upload-cli@3 upload \
+            --source "${{ steps.zip.outputs.file }}" \
+            --extension-id "$EXTENSION_ID" \
+            --client-id "$CLIENT_ID" \
+            --client-secret "$CLIENT_SECRET" \
+            --refresh-token "$REFRESH_TOKEN"
+          npx --yes chrome-webstore-upload-cli@3 publish \
+            --extension-id "$EXTENSION_ID" \
+            --client-id "$CLIENT_ID" \
+            --client-secret "$CLIENT_SECRET" \
+            --refresh-token "$REFRESH_TOKEN" \
+            $( [ "$PUBLISH_TARGET" = "trustedTesters" ] && echo "--trusted-testers" )

@@ -76,6 +76,30 @@ by `pnpm generate-key`, is not committed, and is needed only to sign a `.crx`
 for self-hosted updates. Regenerating the pair changes the id, and every
 deployment's `EXTENSION_ORIGINS` with it, so do not.
 
+## Forking
+
+The pinned id belongs to whoever published it first, and the private half of
+its key is not in this repository. A fork that will publish its own listing, or
+sign its own `.crx`, needs an identity of its own. Do this once, before the
+first release:
+
+1. `pnpm generate-key --force` writes a new private key to
+   `.keys/extension-key.pem` and prints the public key. Put the public key in
+   the manifest's `key` field, and keep the private key out of git (it already
+   is) and somewhere safe, such as a repository secret or a password manager,
+   because it is what signs a self-hosted `.crx`.
+2. `pnpm extension-id` now prints the new id. Replace the old id everywhere it
+   is written down: this README, `CLAUDE.md`, and every deployment's
+   `EXTENSION_ORIGINS`. The code and the tests never hard-code it.
+3. Change the name in `src/manifest.json` and `package.json`, the icons under
+   `src/icons/` (`node scripts/generate-icons.mjs` if you keep the shape), and
+   the listing text in `docs/store-listing.md`.
+4. Create the store item by uploading the first zip, then set up the release
+   pipeline as `docs/publishing-pipeline.md` describes.
+
+After that the rule in `CLAUDE.md` applies to the fork as it does here: the id
+is pinned and must not move again.
+
 ## Build for a deployment
 
 Organizations rolling the extension out to everyone build it for their own
@@ -327,35 +351,13 @@ scratch, so the shipped build is never the test one.
 
 ## Releases
 
-A release is a tag. Bump `version` in `package.json` and the matching `version`
-in `src/manifest.json`, so the source does not read as stale, commit that, then
-tag and push:
-
-```
-git tag v1.1.0
-git push origin v1.1.0
-```
-
-`package.json` is the one that decides what ships: the build copies its version
-into the packaged manifest.
-
-CI runs typecheck, lint, and the unit tests on every push, builds, and keeps
-the zip as a build artifact. On a tag it also attaches `golinks-extension.zip`
-to the GitHub release for that tag.
-
-That zip is the generic build: no address baked in, host access optional. It is
-what a public or unlisted listing carries, and what someone loading the
-extension by hand wants.
-
-A deployment build is never a release artifact, because it belongs to one
-organization. Build it yourself when you need one:
-
-```bash
-BASE_URL=https://links.example.com pnpm build --zip
-```
-
-The store refuses a version it has already accepted, so bump before every
-upload, whichever build you are uploading.
+Bump the version in `package.json` (the build copies it into the manifest),
+commit, tag `vX.Y.Z`, and push the tag. The release workflow checks the tag
+against the version, runs the checks, attaches `golinks-extension-generic.zip`
+to the GitHub release and, when the repository variable `BASE_URL` is set,
+`golinks-extension-deployment.zip` as well. With the Chrome Web Store secrets
+in place it also uploads one of them to the store item and submits it for
+review. `docs/publishing-pipeline.md` has the setup for both.
 
 ## Layout
 

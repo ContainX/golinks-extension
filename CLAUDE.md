@@ -51,6 +51,16 @@ the key pair, never edit the `key` field, and never remove it "because the
 store assigns an id anyway". `scripts/generate-key.mjs` refuses to overwrite an
 existing private key without `--force` for the same reason.
 
+The one exception is a fork's first release. The id above is owned by the
+original publisher and its private key is not in the repository, so a fork
+generates its own key pair once, before publishing anything, and follows
+"Forking" in the README to take the new id everywhere. After that the rule
+above applies to the fork's id.
+
+**Releases and publishing** are `.github/workflows/release.yml`, driven by a
+`vX.Y.Z` tag that must match `package.json`; `docs/publishing-pipeline.md` is
+the setup. `ci.yml` runs the checks on branches and pull requests only.
+
 **No content scripts, ever.** The extension does not inject into pages, does
 not read page content, and holds no permission that would let it. The popup
 reads the active tab's URL through `activeTab` while it is open, and that is
