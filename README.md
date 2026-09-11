@@ -19,6 +19,11 @@ sends nothing anywhere except the deployment you configure, and has no
 analytics. The only thing it ever sends about a page is that page's URL, only
 while the popup is open.
 
+## Contributing
+
+`CONTRIBUTING.md` lists what every change is held to: the checks to run, the
+conventions, and the rules that are easy to break.
+
 ## Install for development
 
 ```
