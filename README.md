@@ -383,3 +383,7 @@ src/
 e2e/                    Playwright browser tests
 scripts/                build, icon, and key/id tools
 ```
+
+## License
+
+Apache License 2.0. See `LICENSE`.
