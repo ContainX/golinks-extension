@@ -274,12 +274,16 @@ way.
 
 ## Force-install with policy
 
-Chrome Browser Cloud Management, Google Workspace, and platform policy files
-all take the same two pieces: force-install the extension, then hand it the
-deployment's address.
+A managed rollout does two things: force-install the extension, and hand it the
+deployment's address. There are two routes to the same result. Pick the one
+that matches how your browsers are managed; do not do both.
 
-In Workspace (**Devices → Chrome → Apps & extensions**), set the installation
-policy to *Force install* and paste this into **Policy for extensions**:
+**Route A: an admin console.** Google Workspace and Chrome Browser Cloud
+Management both manage the browser from the console, and the console itself
+force-installs the extension through its installation policy setting. The only
+JSON you paste is the extension's own settings. In Workspace
+(**Devices → Chrome → Apps & extensions**), set the installation policy to
+*Force install* and paste this into **Policy for extensions**:
 
 ```json
 {
@@ -288,7 +292,12 @@ policy to *Force install* and paste this into **Policy for extensions**:
 }
 ```
 
-As a platform policy file, the same thing reads:
+**Route B: a platform policy file.** For browsers that are not enrolled in a
+console, the same two things are written into one policy document delivered by
+the operating system: Group Policy or the registry on Windows, a configuration
+profile on macOS, a JSON file under `/etc/opt/chrome/policies/managed/` on
+Linux. `ExtensionSettings` does the force-install and `3rdparty` carries the
+extension's settings:
 
 ```json
 {
@@ -310,7 +319,9 @@ As a platform policy file, the same thing reads:
 }
 ```
 
-`shortHost` can be left out when it is `go`.
+In both routes `shortHost` can be left out when it is `go`, and a deployment
+build (see above) needs neither value, because the address is in the package;
+setting `baseUrl` anyway is harmless and wins over the build.
 
 The redirect for the default short host needs no click: `http://go/*` is a
 required permission, granted at install, so `go/keyword` works the moment a
